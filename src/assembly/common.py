@@ -12,9 +12,9 @@ from assembly.graph import Graph
 
 @dataclass
 class BasicBlock:
-    instrs: list[tac.instr]
     index: int
     labels: list[str]
+    instrs: list[tac.instr]
     @property
     def last(self) -> Optional[tac.instr]:
         if not self.instrs:

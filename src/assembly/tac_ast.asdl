@@ -8,7 +8,7 @@ module Tac
     exp = Prim(prim p)
         | BinOp(prim left, op op, prim right)
 
-    instr = Assign(ident var, exp left)
+    instr = Assign(ident var, exp right)
          | Call(ident? var, ident name, prim* args)   -- print, input_int
          | GotoIf(prim test, string label)
          | Goto(string label)

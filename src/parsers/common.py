@@ -1,5 +1,6 @@
 from typing import *
 from lark import Lark, Token, Tree, ParseTree, tree, exceptions
+import pydot
 import common.log as log
 import common.utils as utils
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ class TokenStream:
         self._lookahead = None
     def next(self) -> Token:
         """
-        Returns the next token, thereby consume the token.
+        Returns the next token, thereby consuming the token.
         """
         if self._lookahead is not None:
             x = self._lookahead
@@ -36,12 +37,14 @@ class TokenStream:
         return self._lookahead
     def ensureNext(self, tokenType: str) -> Token:
         """
-        Consumes the next token, ensuring that it has the given type.
+        Consumes the next token, but only if it has the given type.
+        Otherwise, ensureNext throws a ParseError
         """
-        t = self.next()
+        t = self.lookahead()
         if t.type != tokenType:
             raise ParseError(f'Expected token {tokenType} got {t} (type: {t.type})')
         else:
+            self.next()
             return t
     def ensureEof(self, code: str):
         """
@@ -92,11 +95,17 @@ def isAmbiguous(t: ParseTree) -> bool:
                 return True
         return False
 
+def tree_to_dot(t: ParseTree, filename: str):
+    f: Callable[[ParseTree], pydot.Dot] = getattr(tree, 'pydot__tree_to_graph')
+    graph = f(t)
+    g: Callable[[str], None] = getattr(graph, 'write')
+    g(filename)
+
 def parseTreeToPng(path: str, parseTree: ParseTree):
     pathDot = os.path.splitext(path)[0] + '.dot'
     try:
-        tree.pydot__tree_to_dot(parseTree, pathDot) # type: ignore
-        tree.pydot__tree_to_png(parseTree, path) # type: ignore
+        tree_to_dot(parseTree, pathDot)
+        tree_to_dot(parseTree, path)
         log.debug(f'Stored visualization of parse tree in {path}')
     except Exception as err:
         log.debug(f'Could not render parse tree as png: {err}')
@@ -158,3 +167,18 @@ def parseAsTree(args: ParserArgs, defaultGrammarFile: str, startSym: str) -> Par
 
 def unexpectedToken(t: Token, expected: str) -> Never:
     raise ParseError(f'Unexpected token {t} (token type: {t.type}). Expected: {expected}')
+
+def alternatives[T](ruleName: str, toks: TokenStream, funs: list[Callable[[TokenStream], T]]) -> T:
+    """
+    funs is a list of alternative parsing functions. alternatives returns the result
+    of the fist of these functions that does not throw a parse error.
+
+    Important requirement: each of the alternative parsing functions must fail
+    on the first token if it is not applicable.
+    """
+    for f in funs:
+        try:
+            return f(toks)
+        except ParseError:
+            pass
+    raise ParseError(f"None of the alternatives for rule {ruleName} succeeded")

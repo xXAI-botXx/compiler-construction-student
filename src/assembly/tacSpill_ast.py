@@ -1,4 +1,4 @@
-# AUTOMATICALLY GENERATED (2024-03-20 16:01:54)
+# AUTOMATICALLY GENERATED (2024-06-06 16:09:37)
 from __future__ import annotations
 from dataclasses import dataclass
 
@@ -42,7 +42,7 @@ type exp = Prim | BinOp
 @dataclass
 class Assign:
     var: ident
-    left: exp
+    right: exp
 
 @dataclass
 class Call:
