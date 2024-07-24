@@ -20,7 +20,7 @@ def _firstBasicBlock(instrs: list[tac.instr], blockIdx: int) -> tuple[BasicBlock
             labels.append(instr.label)
     else:
         # only labels or no instructions at all
-        return (BasicBlock([], blockIdx, labels), [])
+        return (BasicBlock(blockIdx, labels, []), [])
     instrs = instrs[firstNonLabelIdx:]
     # Now find the first instruction that is a jump or a label
     firstJumpOrLabelIdx = 0
@@ -30,13 +30,13 @@ def _firstBasicBlock(instrs: list[tac.instr], blockIdx: int) -> tuple[BasicBlock
             break
     else:
         # instrs only contains assign or calls
-        return (BasicBlock(instrs, blockIdx, labels), [])
+        return (BasicBlock(blockIdx, labels, instrs), [])
     # idx is the index of the first instruction that is a jump or a label.
     offset = 0 if isinstance(instrs[firstJumpOrLabelIdx], tac.Label) else 1
     # jumps are part of the basic block, labels not
     basicInstrs = instrs[:firstJumpOrLabelIdx+offset]
     rest = instrs[firstJumpOrLabelIdx+offset:]
-    return (BasicBlock(basicInstrs, blockIdx, labels), rest)
+    return (BasicBlock(blockIdx, labels, basicInstrs), rest)
 
 def buildControlFlowGraph(instrs: list[tac.instr]) -> ControlFlowGraph:
     g = Graph[int, BasicBlock]('directed')

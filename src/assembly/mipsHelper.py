@@ -8,9 +8,9 @@ from assembly.common import *
 from common.compilerSupport import *
 
 class Regs:
-    t1 = tacSpill.Ident('$t0')
-    t2 = tacSpill.Ident('$t1')
-    t3 = mips.Reg('$t2')
+    t0 = tacSpill.Ident('$t0')
+    t1 = tacSpill.Ident('$t1')
+    t2 = mips.Reg('$t2')
     v0 = mips.Reg('$v0')
     a0 = mips.Reg('$a0')
     sp = mips.Reg('$sp')

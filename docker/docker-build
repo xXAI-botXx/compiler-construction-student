@@ -4,7 +4,7 @@ d=$(date +%Y%m%d%H%M%S)
 
 if [ "$1" == "--help" ]; then
     echo "USAGE: $0 [PLATFORM]"
-    echo "PLATFORM is either linux/arm64 or linux/amd64"
+    echo "PLATFORM is either linux/arm64 or linux/amd64 (default)"
     exit 1
 fi
 

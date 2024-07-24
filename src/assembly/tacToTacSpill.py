@@ -29,9 +29,9 @@ from common.compilerSupport import *
 import common.utils as utils
 
 class Regs:
-    t1 = tacSpill.Ident('$t0')
-    t2 = tacSpill.Ident('$t1')
-    t3 = mips.Reg('$t2')
+    t0 = tacSpill.Ident('$t0')
+    t1 = tacSpill.Ident('$t1')
+    t2 = mips.Reg('$t2')
     v0 = mips.Reg('$v0')
     a0 = mips.Reg('$a0')
     sp = mips.Reg('$sp')
@@ -59,11 +59,11 @@ def spillPrim(p: tac.prim, regMap: RegisterMap, tmp: tacSpill.ident) ->  tuple[t
 def spillExp(e: tac.exp, regMap: RegisterMap) ->  tuple[tacSpill.exp, list[tacSpill.instr]]:
     match e:
         case tac.Prim(p):
-            (newP, instrs) = spillPrim(p, regMap, Regs.t1)
+            (newP, instrs) = spillPrim(p, regMap, Regs.t0)
             return (tacSpill.Prim(newP), instrs)
         case tac.BinOp(p1, op, p2):
-            (newP1, instrs1) = spillPrim(p1, regMap, Regs.t1)
-            (newP2, instrs2) = spillPrim(p2, regMap, Regs.t2)
+            (newP1, instrs1) = spillPrim(p1, regMap, Regs.t0)
+            (newP2, instrs2) = spillPrim(p2, regMap, Regs.t1)
             return (tacSpill.BinOp(newP1, tacSpill.Op(op.name), newP2), instrs1 + instrs2)
 
 def spillIfNeeded(isSpilled: bool, x: tac.ident, newX: tacSpill.ident) -> list[tacSpill.instr]:
@@ -73,7 +73,7 @@ def spillInstr(i: tac.instr, regMap: RegisterMap) -> list[tacSpill.instr]:
     match i:
         case tac.Assign(x, e):
             (newE, spillLoads) = spillExp(e, regMap)
-            (newX, spillStores) = spillIdent(x, regMap, Regs.t1, 'store')
+            (newX, spillStores) = spillIdent(x, regMap, Regs.t0, 'store')
             return spillLoads + [tacSpill.Assign(newX, newE)] + spillStores
         case tac.Call(x, f, args):
             # Assumptions: all registers in use are callee-save registers (no temporaries)
@@ -81,17 +81,17 @@ def spillInstr(i: tac.instr, regMap: RegisterMap) -> list[tacSpill.instr]:
             spillLoads: list[tacSpill.instr] = []
             newArgs: list[tacSpill.prim] = []
             for a in args:
-                (newA, l) = spillPrim(a, regMap, Regs.t1)
+                (newA, l) = spillPrim(a, regMap, Regs.t0)
                 newArgs.append(newA)
                 spillLoads.extend(l)
             if x is not None:
-                (newX, spillStores) = spillIdent(x, regMap, Regs.t1, 'store')
+                (newX, spillStores) = spillIdent(x, regMap, Regs.t0, 'store')
             else:
                 newX = None
                 spillStores = []
             return spillLoads + [tacSpill.Call(newX, tacSpill.Ident(f.name), newArgs)] + spillStores
         case tac.GotoIf(p, label):
-            (newP, spillLoads) = spillPrim(p, regMap, Regs.t1)
+            (newP, spillLoads) = spillPrim(p, regMap, Regs.t0)
             return spillLoads + [tacSpill.GotoIf(newP, label)]
         case tac.Goto(label):
             return [tacSpill.Goto(label)]

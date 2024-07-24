@@ -25,9 +25,9 @@ class InterfGraphBuilder:
         # self.after holds, for each instruction I, to set of variables live after I.
         self.after: dict[InstrId, set[tac.ident]] = {}
 
-    def __liveStart(self, bb: BasicBlock, s: set[tac.ident]) -> set[tac.ident]:
+    def liveStart(self, bb: BasicBlock, s: set[tac.ident]) -> set[tac.ident]:
         """
-        Given a set of variables s and a basic block bb, __liveStart computes
+        Given a set of variables s and a basic block bb, liveStart computes
         the set of variables live at the beginning of bb, assuming that s
         are the variables live at the end of the block.
 
@@ -37,7 +37,7 @@ class InterfGraphBuilder:
         """
         raise ValueError('todo')
 
-    def __liveness(self, g: ControlFlowGraph):
+    def liveness(self, g: ControlFlowGraph):
         """
         This method computes liveness information and fills the sets self.before and
         self.after.
@@ -61,7 +61,7 @@ class InterfGraphBuilder:
         """
         This method builds the interference graph. It performs three steps:
 
-        - Use __liveness to fill the sets self.before and self.after.
+        - Use liveness to fill the sets self.before and self.after.
         - Setup the interference graph as an undirected graph containing all variables
           defined or used by any instruction of any basic block. Initially, the
           graph does not have any edges.

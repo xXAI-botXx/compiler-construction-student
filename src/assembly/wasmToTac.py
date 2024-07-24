@@ -60,7 +60,11 @@ def _toTacSingle(rInstrs: list[WasmInstrL], targetVar: Optional[tac.ident], e: _
             else:
                 tacVar = tac.Ident(x.id)
                 (val, rest) = _toTacSingleNotNone(rest, tacVar, e)
-                e.emit(tac.Assign(tacVar, tac.Prim(val)))
+                match val:
+                    case tac.Name(v) if v == tacVar:
+                        pass # nothing todo
+                    case _:
+                        e.emit(tac.Assign(tacVar, tac.Prim(val)))
                 if op == 'set':
                     res = None
                 else:

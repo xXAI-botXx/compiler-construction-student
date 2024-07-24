@@ -76,10 +76,15 @@ def genPytestIni(topDir: str, ex: Exercise):
     pytestCfg= f"""[pytest]
 addopts = {opt}
 """
-    cfgPath = shell.pjoin(topDir, 'student/pytest.ini')
+    path = 'student/pytest.ini'
+    cfgPath = shell.pjoin(topDir, path)
     open(cfgPath, 'w').write(pytestCfg)
+    print(f'{path}:')
+    print(pytestCfg)
+    print()
 
 def doWork(cfg: Config, tmpDir: str):
+    print('Checking submission ...')
     debug(f'cfg={cfg}, tmpDir={tmpDir}')
     topDir = copyTestDir(cfg.testDir, tmpDir)
     debug(f'Copied test directory {cfg.testDir}, topDir={topDir}')

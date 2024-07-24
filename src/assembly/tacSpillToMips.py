@@ -55,7 +55,7 @@ def toMips(i: tacSpill.instr, locs: StackLocs) -> list[mips.instr]:
                 case _:
                     raise ValueError(f'Invalid call in tacSpill: {i}')
         case tacSpill.GotoIf(tacSpill.Const(n), label):
-            tmp = Regs.t3
+            tmp = Regs.t2
             return [mips.LoadI(tmp, imm(n)), mips.BranchNeqZero(tmp, label)]
         case tacSpill.GotoIf(tacSpill.Name(y), label):
             return [mips.BranchNeqZero(reg(y), label)]
