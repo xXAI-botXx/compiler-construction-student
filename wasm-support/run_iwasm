@@ -8,7 +8,7 @@ else
     LIB_EXT=".so"
 fi
 
-BWLEHRPOOL_DIR=/home/student/__compiler-construction-student/wasm-support
+BWLEHRPOOL_DIR=/home/student/cc-support/__compiler-construction-student/wasm-support
 
 if [ -d /cc -a -d /cc-support ]; then
     # Running with docker
