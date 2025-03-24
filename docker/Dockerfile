@@ -2,7 +2,7 @@
 # Note: the context directory for this dockerfile is ..
 
 # see https://github.com/arnaudblois/python-ubuntu-image
-FROM ursamajorlab/jammy-python:3.12
+FROM ursamajorlab/jammy-python:3.13
 
 # Setup timezone
 ENV TZ Europe/Berlin

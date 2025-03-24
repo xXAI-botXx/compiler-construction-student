@@ -56,7 +56,7 @@ def info(s: str):
     _log.info(s, stacklevel=STACKLEVEL)
 
 def warn(s: str):
-    _log.warn(s, stacklevel=STACKLEVEL)
+    _log.warning(s, stacklevel=STACKLEVEL)
 
 def error(s: str):
     _log.error(s, stacklevel=STACKLEVEL)
