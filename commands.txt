@@ -1,0 +1,17 @@
+1. WSL starten
+2. cd compiler-construction-student
+3. code .
+4. docker run -v .:/cc -ti skogsbaer/compiler-construction-wasm_linux-amd64:latest bash
+
+scripts/run_test
+scripts/run-tests -k 'test_compiler[var'
+
+scripts/check
+
+apt update && apt install -y zip
+scripts/zip-solution
+
+"python.analysis.typeCheckingMode": "strict"
+
+you can use 'git gui'
+

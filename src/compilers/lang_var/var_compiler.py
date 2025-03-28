@@ -3,7 +3,7 @@ from lang_var.var_ast import *
 from common.wasm import *
 import lang_var.var_tychecker as var_tychecker
 from common.compilerSupport import *
-import common.utils as utils
+# import common.utils as utils
 
 FUNC_MAPPER = {
     '$input_int': '$input_i64',
@@ -36,7 +36,7 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
 # Slide: Compiling Expressions
 
 def compileStmts(stmts: list[stmt]) -> list[WasmInstr]:
-    instrs = []
+    instrs: list[WasmInstr] = []
     for cur_stmt in stmts:
         match cur_stmt:
             case StmtExp(exp=exp):
@@ -49,7 +49,7 @@ def compileStmts(stmts: list[stmt]) -> list[WasmInstr]:
 
 
 def compileExps(exps: list[exp]) -> list[WasmInstr]:
-    instrs = []
+    instrs: list[WasmInstr] = []
     for cur_exp in exps:
         match cur_exp:
             case IntConst(value=value):
