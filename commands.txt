@@ -4,7 +4,7 @@
 4. docker run -v .:/cc -ti skogsbaer/compiler-construction-wasm_linux-amd64:latest bash
 
 scripts/run_test
-scripts/run-tests -k 'test_compiler[var'
+scripts/run-tests -k 'test_compiler[loop'
 
 scripts/check
 
@@ -14,4 +14,6 @@ scripts/zip-solution
 "python.analysis.typeCheckingMode": "strict"
 
 you can use 'git gui'
+
+single run/compiling: scripts/run --lang loop run ./test_files/lang_loop/factorial.py
 

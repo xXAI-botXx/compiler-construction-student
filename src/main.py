@@ -198,4 +198,8 @@ def main():
             utils.abort(f'Unknown command: {args.cmd}')
 
 if __name__ == '__main__':
+    # # clear DEBUGGING.txt
+    # if os.path.exists("./DEBUGGING.txt"):
+    #     with open("./DEBUGGING.txt", "w") as f:
+    #         f.write("")
     main()
