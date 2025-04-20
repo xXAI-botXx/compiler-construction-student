@@ -17,7 +17,7 @@ def readTextFile(path: str) -> str:
             err.add_note(f'Cannot decode content of file {path}')
             raise err
 
-def writeTextFile(path: str, content: str, mode:str=None):
+def writeTextFile(path: str, content: str, mode:Union[str, None]=None):
     if not mode:
         mode = "a" if os.path.exists(path) else "w"
     with open(path, mode) as f:

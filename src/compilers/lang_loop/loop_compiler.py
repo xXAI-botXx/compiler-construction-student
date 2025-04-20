@@ -3,9 +3,9 @@ from lang_loop.loop_ast import *
 from common.wasm import *
 import lang_loop.loop_tychecker as loop_tychecker
 from common.compilerSupport import *
-import common.symtab as symtab
+# import common.symtab as symtab
 import common.utils as utils
-from typing import Union
+from typing import Union, Any, Callable
 import inspect
 
 
@@ -13,7 +13,7 @@ import inspect
 # --------------
 # >>> Helper <<<
 # --------------
-FUNC_MAPPER = {
+FUNC_MAPPER:dict[str, Callable[[Any], str]] = {
     '$input_int': lambda type_:f'$input_{type_}',
     '$print': lambda type_:'$print_bool' if 'i32' in f'$print_{type_}' else f'$print_{type_}'
 }
@@ -22,15 +22,15 @@ FUNC_MAPPER = {
 def ident_to_wasm_id(x:Ident) -> WasmId:
     return WasmId("$"+x.name)
 
-def getVariable(name:str, var_types:dict[str, str]) -> Union[None, WasmInstrConst]:
+def getVariable(name:str, var_types:dict[str, str]) -> str:
     utils.writeTextFile(path="./DEBUGGING.txt", content=f"Search '{name}' in {var_types}")
     
     for key, value in var_types.items():
         if key == name:
             return value
-    return None
+    return ""
 
-def extractReturntypeFromInstrs(instrs:list, var_types:dict[str, str], only_stack=True):
+def extractReturntypeFromInstrs(instrs:Union[list[Any], Any], var_types:dict[str, str], only_stack:bool=True) -> str:
     """
     Extracts the return type of Wasm Instructions.
     """
@@ -38,7 +38,7 @@ def extractReturntypeFromInstrs(instrs:list, var_types:dict[str, str], only_stac
         instrs = [instrs]
 
     # find datatype of if/while body
-    data_type = None
+    data_type:str = ""
     for cur_instr in instrs:
         if isinstance(cur_instr, WasmInstrVarLocal) and cur_instr.op == "get":
             var_name = cur_instr.id.id.replace("$", "")
@@ -63,7 +63,7 @@ def extractReturntypeFromInstrs(instrs:list, var_types:dict[str, str], only_stac
         data_type = "i32"
     return data_type
 
-def extractReturntypeFromPythonInstrs(instrs:list, var_types:dict[str, str], only_stack=True):
+def extractReturntypeFromPythonInstrs(instrs:Union[Any, list[Any]], var_types:dict[str, str], only_stack:bool=True) -> str:
     """
     Extracts the return type of Python Loop Language Instructions.
     """
@@ -71,7 +71,7 @@ def extractReturntypeFromPythonInstrs(instrs:list, var_types:dict[str, str], onl
         instrs = [instrs]
 
     # find datatype of if/while body
-    data_type = None
+    data_type:str = ""
     for cur_instr in instrs:
         if isinstance(cur_instr, Name):
             # cur_instr.ty
@@ -94,10 +94,20 @@ def extractReturntypeFromPythonInstrs(instrs:list, var_types:dict[str, str], onl
 
     return data_type
 
-def extractStmt(statements:list[stmt], var_types:dict):
+def compileDataType(type_:Any) -> str:
+    utils.writeTextFile(path="./DEBUGGING.txt", content=f"  -> Try to compile {type_} ({type(type_)}) to wasm data type.")
+    if (isinstance(type_, int) or type_ == int or isinstance(type_, Int)) and not isinstance(type_, bool):
+        return 'i64'
+    elif (isinstance(type_, str) and type_.lower() in ["integer", "int", "i", "i64"]) and not isinstance(type_, bool):
+        return 'i64'
+    else:
+        return 'i32'
+
+def extractStmt(statements:list[Any], var_types:dict[str, str]) -> dict[str, str]:
     utils.writeTextFile(path="./DEBUGGING.txt", content=f"Try to extract stmt: {statements} (current var_types: {var_types})")
-    if not isinstance(statements, list):
-        statements = [statements]
+    # if not isinstance(statements, list):
+    #     statements = [statements]
+
     for cur_stmt in statements:
         if isinstance(cur_stmt, Assign):
             if isinstance(cur_stmt.right, IntConst) or isinstance(cur_stmt.right, BoolConst):
@@ -115,7 +125,7 @@ def extractStmt(statements:list[stmt], var_types:dict):
             if isinstance(cur_stmt.right, BinOp) and isinstance(cur_stmt.right.ty, NotVoid):
                 var_types[cur_stmt.var.name] = compileDataType(cur_stmt.right.ty.ty)
         elif isinstance(cur_stmt, StmtExp):
-            extractStmt(cur_stmt.exp, var_types)
+            extractStmt([cur_stmt.exp], var_types)
         elif isinstance(cur_stmt, IfStmt):
             # var_types = extractStmt(cur_stmt.thenBody, var_types)
             # var_types = extractStmt(cur_stmt.elseBody, var_types)
@@ -131,23 +141,14 @@ def extractStmt(statements:list[stmt], var_types:dict):
         elif isinstance(cur_stmt, Call) and cur_stmt.name.name in ["print"]:
             pass
         elif isinstance(cur_stmt, UnOp) and isinstance(cur_stmt.ty, NotVoid):
-            extractStmt(cur_stmt.arg, var_types)
+            extractStmt([cur_stmt.arg], var_types)
         elif isinstance(cur_stmt, BinOp) and isinstance(cur_stmt.ty, NotVoid):
-            extractStmt(cur_stmt.left, var_types)
-            extractStmt(cur_stmt.right, var_types)
+            extractStmt([cur_stmt.left], var_types)
+            extractStmt([cur_stmt.right], var_types)
         else:
             raise ValueError(f"Did not handled '{cur_stmt}' (type={type(cur_stmt)}).")
 
     return var_types
-
-def compileDataType(type_):
-    utils.writeTextFile(path="./DEBUGGING.txt", content=f"  -> Try to compile {type_} ({type(type_)}) to wasm data type.")
-    if (isinstance(type_, int) or type_ == int or isinstance(type_, Int)) and not isinstance(type_, bool):
-        return 'i64'
-    elif (isinstance(type_, str) and type_.lower() in ["integer", "int", "i", "i64"]) and not isinstance(type_, bool):
-        return 'i64'
-    else:
-        return 'i32'
 
 
 
@@ -166,7 +167,7 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
     vars = loop_tychecker.tycheckModule(m)
     
     # compiling statements
-    var_types = dict()
+    var_types:dict[str, str] = dict()
     var_types = extractStmt(m.stmts, var_types)
     
     utils.writeTextFile(path="./DEBUGGING.txt", content=f"\nScript run from: {[cur_stack.filename for cur_stack in inspect.stack()]}\nVars: {var_types}")
@@ -176,7 +177,7 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
     
     # generating Wasm module
     idMain = WasmId('$main')
-    locals: list[tuple[WasmId, WasmValtype]] = []
+    locals: list[Any] = []
     for key, value in vars.items():
         locals += [[ident_to_wasm_id(key), compileDataType(value.ty)]]    # value
     # ty: T
@@ -195,11 +196,11 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
 # See: CC/languaes_formal.pdf/2.2 Evluation Rules
 # Slide: Compiling Expressions
 
-def compileStmts(stmts: list[stmt], var_types:dict[str, str]={}) -> list[WasmInstr]:
-    instrs: list[WasmInstr] = []
+def compileStmts(stmts:list[Any], var_types:dict[Any, Any]={}) -> list[Any]:
+    instrs:list[Union[WasmInstrL, WasmInstr, WasmInstrLoop]] = []
 
-    if not isinstance(stmts, list):
-        stmts = [stmts]
+    # if not isinstance(stmts, list):
+    #     stmts = [stmts]
 
     for cur_stmt in stmts:
         utils.writeTextFile(path="./DEBUGGING.txt", content=f"Statement: {cur_stmt}")
@@ -234,19 +235,21 @@ def compileStmts(stmts: list[stmt], var_types:dict[str, str]={}) -> list[WasmIns
                 loop_body += compileStmts(body, var_types)
                 loop_body += [WasmInstrBranch(entry_jump_label, conditional=False)]
 
-                block_body = [WasmInstrLoop(label=entry_jump_label, body=loop_body)]
+                block_body:list[WasmInstr] = [WasmInstrLoop(label=entry_jump_label, body=loop_body)]
 
                 instrs += [WasmInstrBlock(label=exit_jump_label, result=None, body=block_body)]
+            case _: 
+                pass
 
         utils.writeTextFile(path="./DEBUGGING.txt", content=f" -> Return statements: {instrs}")
 
     return instrs
 
-def compileExps(exps: list[exp], var_types:dict[str, str]={}) -> list[WasmInstr]:
-    instrs: list[WasmInstr] = []
+def compileExps(exps: Union[list[Any], Any], var_types:dict[Any, Any]={}) -> list[Any]:
+    instrs:list[Union[WasmInstrL, WasmInstr, WasmInstrLoop]] = []
 
-    if not isinstance(exps, list):
-        exps = [exps]
+    # if not isinstance(exps, list):
+    #     exps = [exps]
 
     for cur_exp in exps:
         utils.writeTextFile(path="./DEBUGGING.txt", content=f"Expression: {cur_exp}")
@@ -258,19 +261,49 @@ def compileExps(exps: list[exp], var_types:dict[str, str]={}) -> list[WasmInstr]
             case Name(name=name):
                 instrs += [WasmInstrVarLocal(op='get', id=WasmId('$'+name.name))]
             case Call(name=name, args=args, ty=ty):
-                args = compileExps(args, var_types)
+                args:list[Any] = compileExps(args, var_types)
                 instrs += args
 
                 utils.writeTextFile(path="./DEBUGGING.txt", content=f"Call '{name}' '{ty}' args: {args}")
-                parameter = args[0] if isinstance(args, list) and len(args) >= 1 else args
+                try:
+                    parameter = args[0] # if isinstance(args, list) and len(args) >= 1 else args
+                except Exception:
+                    parameter = args
                 # if isinstance(ty, NotVoid):
                 #     data_type = compileDataType(ty.ty)
                 # else:
+                data_type:Any = ""
                 try:
-                    if isinstance(parameter, WasmInstrCall) and "input" in parameter.id.id:
-                        data_type = "i64"
-                    else:
-                        data_type = parameter.ty
+                    match parameter:
+                        case WasmInstrCall(id=WasmId(id=id_str)) if "input" in id_str:
+                            data_type = "i64"
+                        case WasmInstrCall(id=WasmId(id=id_str)) if "print" in id_str:
+                            data_type = id_str.split("_")[-1]
+                        case WasmInstrIntRelOp(ty=ty):
+                            data_type = ty
+                        case WasmInstrNumBinOp(ty=ty):
+                            data_type = ty
+                        case WasmGlobal(ty=ty):
+                            data_type = ty
+                        case WasmInstrConst(ty=ty):
+                            data_type = ty
+                        case _:
+                            raise Exception("Custom Exception")
+                    # if isinstance(parameter, WasmInstrCall) and "input" in parameter.id.id:
+                    #     data_type = "i64"
+                    # elif isinstance(parameter, WasmInstrCall) and "print" in parameter.id.id:
+                    #     data_type = parameter.ty
+                    # elif isinstance(parameter, WasmInstrIntRelOp):
+                    #      data_type = parameter.ty
+                    # elif isinstance(parameter, WasmInstrNumBinOp):
+                    #      data_type = parameter.ty
+                    # elif isinstance(parameter, WasmGlobal):
+                    #      data_type = parameter.ty
+                    # elif isinstance(parameter, WasmInstrConst):
+                    #      data_type = parameter.ty
+                    # else:
+                    #     raise Exception("Custom Exception")
+                        # data_type = cast(str, parameter.ty)
                 except Exception:
                     if name.name == "input_int":
                         data_type = 'i64'
@@ -298,10 +331,10 @@ def compileExps(exps: list[exp], var_types:dict[str, str]={}) -> list[WasmInstr]
                         instrs += compileExps([arg], var_types)
                         instrs += [WasmInstrNumBinOp(ty='i32', op='xor')]
             case BinOp(left=left, op=op, right=right):
-                left = compileExps(left, var_types)
-                right = compileExps(right, var_types)
-                left_datatype = extractReturntypeFromInstrs(left, var_types, only_stack=False)
-                right_datatype = extractReturntypeFromInstrs(right, var_types, only_stack=False)
+                left:Union[list[Any], Any] = compileExps([left], var_types)
+                right:Union[list[Any], Any] = compileExps([right], var_types)
+                left_datatype:str = extractReturntypeFromInstrs(left, var_types, only_stack=False)
+                right_datatype:str = extractReturntypeFromInstrs(right, var_types, only_stack=False)
                 # left_datatype = extractReturntypeFromPythonInstrs(left if isinstance(left, list) else [left], var_types, only_stack=False)
                 # right_datatype = extractReturntypeFromPythonInstrs(right if isinstance(right, list) else [left], var_types, only_stack=False)
 
@@ -315,6 +348,8 @@ def compileExps(exps: list[exp], var_types:dict[str, str]={}) -> list[WasmInstr]
                         case Sub(): 
                             op = 'sub'
                         case Mul(): 
+                            op = 'mul'
+                        case _: 
                             op = 'mul'
                     instrs += [WasmInstrNumBinOp(ty='i64', op=op)]
                 elif left_datatype == "i64" and right_datatype == "i64" and any([op == cur_op for cur_op in [Less(), LessEq(), Greater(), GreaterEq(), Eq(), NotEq()]]):
@@ -333,6 +368,8 @@ def compileExps(exps: list[exp], var_types:dict[str, str]={}) -> list[WasmInstr]
                         case Eq():
                             op = 'eq'
                         case NotEq():
+                            op = 'ne'
+                        case _: 
                             op = 'ne'
 
                     instrs += [WasmInstrIntRelOp(ty='i64', op=op)]
@@ -361,14 +398,18 @@ def compileExps(exps: list[exp], var_types:dict[str, str]={}) -> list[WasmInstr]
                                                    elseInstrs=right    # compileExp(right)
                                                    )
                                       ]
-                else:
-                    raise ValueError(f"Can't solve binary operation '{BinOp(left=left, op=op, right=right)}'"+\
-                                     f"\n   + op: {op}\n   + left-ty: {left_datatype}\n   + right-ty: {right_datatype}"+\
-                                     f"\nCheck 1:\n    -> left == i64 => {left_datatype == 'i64'}\n    -> right == i64 => {right_datatype == 'i64'}\n    -> any([op == cur_op for cur_op in [Add(), Sub(), Mul()]]) => {any([op == cur_op for cur_op in [Add(), Sub(), Mul()]])}"+\
-                                     f"\nCheck 2:\n    -> left == i64 => {left_datatype == 'i64'}\n    -> right == i64 => {right_datatype == 'i64'}\n    -> any([op == cur_op for cur_op in [Less(), LessEq(), Greater(), GreaterEq(), Eq(), NotEq()]]) => {any([op == cur_op for cur_op in [Less(), LessEq(), Greater(), GreaterEq(), Eq(), NotEq()]])}"+\
-                                     f"\nCheck 3:\n    -> left == i32 => {left_datatype == 'i32'}\n    -> right == i32 => {right_datatype == 'i32'}\n    -> any([op == cur_op for cur_op in [And(), Or(), Eq(), NotEq()]]) => {any([op == cur_op for cur_op in [And(), Or(), Eq(), NotEq()]])}")
-                    
-                
+                        case _: 
+                            pass
+                # else:
+                #     raise ValueError(f"Can't solve binary operation '{BinOp(left=left, op=op, right=right)}'"+\
+                #                      f"\n   + op: {op}\n   + left-ty: {left_datatype}\n   + right-ty: {right_datatype}"+\
+                #                      f"\nCheck 1:\n    -> left == i64 => {left_datatype == 'i64'}\n    -> right == i64 => {right_datatype == 'i64'}\n    -> any([op == cur_op for cur_op in [Add(), Sub(), Mul()]]) => {any([op == cur_op for cur_op in [Add(), Sub(), Mul()]])}"+\
+                #                      f"\nCheck 2:\n    -> left == i64 => {left_datatype == 'i64'}\n    -> right == i64 => {right_datatype == 'i64'}\n    -> any([op == cur_op for cur_op in [Less(), LessEq(), Greater(), GreaterEq(), Eq(), NotEq()]]) => {any([op == cur_op for cur_op in [Less(), LessEq(), Greater(), GreaterEq(), Eq(), NotEq()]])}"+\
+                #                      f"\nCheck 3:\n    -> left == i32 => {left_datatype == 'i32'}\n    -> right == i32 => {right_datatype == 'i32'}\n    -> any([op == cur_op for cur_op in [And(), Or(), Eq(), NotEq()]]) => {any([op == cur_op for cur_op in [And(), Or(), Eq(), NotEq()]])}")
+            case _: 
+                pass
+
+
     utils.writeTextFile(path="./DEBUGGING.txt", content=f" -> Return Exp Instr.: {instrs}")
     return instrs
 
