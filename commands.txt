@@ -17,3 +17,6 @@ you can use 'git gui'
 
 single run/compiling: scripts/run --lang loop run ./test_files/lang_loop/factorial.py
 
+
+Run test:
+scripts/run --lang var parse ./test.py

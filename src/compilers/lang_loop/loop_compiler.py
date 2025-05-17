@@ -40,6 +40,7 @@ def extractReturntypeFromInstrs(instrs:Union[list[Any], Any], var_types:dict[str
     # find datatype of if/while body
     data_type:str = ""
     for cur_instr in instrs:
+        cur_instr:Any
         if isinstance(cur_instr, WasmInstrVarLocal) and cur_instr.op == "get":
             var_name = cur_instr.id.id.replace("$", "")
             if var_name not in var_types.keys():
@@ -73,6 +74,7 @@ def extractReturntypeFromPythonInstrs(instrs:Union[Any, list[Any]], var_types:di
     # find datatype of if/while body
     data_type:str = ""
     for cur_instr in instrs:
+        cur_instr:Any
         if isinstance(cur_instr, Name):
             # cur_instr.ty
             var_name = cur_instr.name.name.replace("$", "")
@@ -98,7 +100,7 @@ def compileDataType(type_:Any) -> str:
     utils.writeTextFile(path="./DEBUGGING.txt", content=f"  -> Try to compile {type_} ({type(type_)}) to wasm data type.")
     if (isinstance(type_, int) or type_ == int or isinstance(type_, Int)) and not isinstance(type_, bool):
         return 'i64'
-    elif (isinstance(type_, str) and type_.lower() in ["integer", "int", "i", "i64"]) and not isinstance(type_, bool):
+    elif isinstance(type_, str) and type_.lower() in ["integer", "int", "i", "i64"]:
         return 'i64'
     else:
         return 'i32'

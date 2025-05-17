@@ -1,0 +1,42 @@
+%import common (NEWLINE, WS_INLINE, SH_COMMENT, CNAME, INT)
+%ignore WS_INLINE
+%ignore SH_COMMENT
+
+COMMA: ","
+
+start: lvar
+
+lvar: body
+
+body: (NEWLINE | stmt NEWLINE)*
+
+stmt: assign_stmt
+    | exp
+
+assign_stmt: CNAME "=" exp     -> assign_stmt
+
+arg_list: exp (COMMA exp)* 
+
+call: CNAME "(" arg_list? ")" -> call_exp
+     | CNAME                  -> var_exp
+
+unary_exp: "-" exp_2         -> unary_op
+
+
+exp_2: INT             -> int_exp
+      | call           
+      | unary_exp      -> unary_exp
+      | "(" exp ")"    -> paren_exp
+
+exp_1: exp_2
+       | exp_1 "*" exp_2  -> mul_exp
+
+exp: exp_1
+     | exp "+" exp_1      -> add_exp
+     | exp "-" exp_1      -> sub_exp
+     
+
+
+
+
+

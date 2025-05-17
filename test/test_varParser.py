@@ -21,6 +21,7 @@ def runParserTest(file: str, lang: str, alg: p.ParseAlg):
             varParser = importModVarParser()
             ast = varParser.parseModule(args)
             astViaPy = genericParser.parseFile(file, var_ast)
+            # print(f"Your AST: {ast}\n\nGoal AST: {astViaPy}")
             assert ast == astViaPy
         case _:
             raise ValueError(f'Unsupported language for testing parsers: {lang}')

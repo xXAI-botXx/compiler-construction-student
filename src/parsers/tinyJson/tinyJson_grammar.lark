@@ -1,0 +1,11 @@
+start: STRING INT LBRACE RBRACE COLON COMMA
+
+WHITESPACE: /[\r\n\t ]+/   
+STRING: "\"" /[^\"]*/ "\""
+INT: /[0-9]+/
+LBRACE: "{"
+RBRACE: "}"
+COLON: ":"
+COMMA: ","
+
+%ignore WHITESPACE
