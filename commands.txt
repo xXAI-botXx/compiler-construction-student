@@ -20,3 +20,5 @@ single run/compiling: scripts/run --lang loop run ./test_files/lang_loop/factori
 
 Run test:
 scripts/run --lang var parse ./test.py
+
+scripts/run --lang loop compile ./test.py

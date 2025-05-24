@@ -1,17 +1,9 @@
-# x = input_int()
-# print(x + 2)
-
-# Module(stmts=[
-#     Assign(var=Ident(name='x'), 
-#            right=Call(name=Ident(name='input_int'), args=[])), 
-#     StmtExp(exp=Call(name=Ident(name='print'), 
-#                      args=[BinOp(
-#                             left=Name(name='x'), 
-#                             op=Add(), 
-#                             right=IntConst(value=2)
-#                             )
-#                             ]
-#                     )
-#             )
-#         ]
-#     )
+# a = input_int() * [0]
+# print(len(a))
+# --------------
+# a = []
+# print(len(a))
+if (input_int() == 0 or input_int() == 1):
+    print(42)
+else:
+    print(0)
