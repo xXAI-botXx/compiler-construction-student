@@ -1,9 +1,13 @@
+# Task: Take loop_compiler.py and change, so it work for array_astAtom
 
-from lang_loop.loop_ast import *
+from lang_array.array_astAtom import *    # -> atom
+import lang_array.array_ast as plainAst
 from common.wasm import *
-import lang_loop.loop_tychecker as loop_tychecker
+import lang_array.array_tychecker as array_tychecker
+import lang_array.array_transform as array_transform
+from lang_array.array_compilerSupport import *
 from common.compilerSupport import *
-from typing import Union, Any, Callable
+import common.utils as utils
 
 
 
@@ -94,8 +98,14 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
     # type-checking
     vars = loop_tychecker.tycheckModule(m)
     
+    # # compiling statements
+    # instrs = compileStmts(m.stmts)
+
     # compiling statements
-    instrs = compileStmts(m.stmts)
+    stmts:list[stmt] = m.stmts
+    env_ctx:array_transform.Ctx = array_transform.Ctx()
+    stmt_a:list[atom.stmt] = array_transform.transStmts(stmts, env_ctx)
+    instrs = compileStmts(stmt_a)
     
     # generating Wasm module
     idMain = WasmId('$main')
@@ -112,9 +122,7 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
                 funcs=[WasmFunc(idMain, [], None, locals, instrs)]
             )
 
-# See: CC/languaes_formal.pdf/2.2 Evluation Rules
-# Slide: Compiling Expressions
-
+# FIXME -> should handle now atom stmt not normal stmt
 def compileStmts(stmts:list[stmt]) -> list[WasmInstr]:
     instrs:list[Union[WasmInstrL, WasmInstr, WasmInstrLoop]] = []
 
