@@ -3,28 +3,15 @@ from lang_loop.loop_ast import *
 from common.wasm import *
 import lang_loop.loop_tychecker as loop_tychecker
 from common.compilerSupport import *
-from typing import Union, Any, Callable
+from typing import Union, Any
 
 
 
 # --------------
 # >>> Helper <<<
 # --------------
-FUNC_MAPPER:dict[str, Callable[[Any], str]] = {
-    '$input_int': lambda type_:f'$input_{type_}',
-    '$print': lambda type_:'$print_bool' if 'i32' in f'$print_{type_}' else f'$print_{type_}'
-}
-
 def ident_to_wasm_id(x:Ident) -> WasmId:
     return WasmId("$"+x.name)
-
-def compileDataType(type_:Any) -> str:
-    if (isinstance(type_, int) or type_ == int or isinstance(type_, Int)) and not isinstance(type_, bool):
-        return 'i64'
-    elif isinstance(type_, str) and type_.lower() in ["integer", "int", "i", "i64"]:
-        return 'i64'
-    else:
-        return 'i32'
 
 def get_ty(e:exp) -> ty:
     ty_ = e.ty
@@ -34,55 +21,19 @@ def get_ty(e:exp) -> ty:
         raise ValueError("Expected exp to have an return type.")
 
 def ty_to_string(ty_:ty) -> str:
-    if type(ty_) == Int:
-        return "i64"
-    else:
-        return "i32"
+    match ty_:
+        case Int():
+            return 'i64'
+        case Bool():
+            return 'i32'
 
-def extract_ty(ty_: optional[resultTy]) -> Union[ty, None]:
-    if ty_:
-        if type(ty_) == NotVoid:
-            return ty_.ty
-        else:
-            # in such cases we expect to don't use the type
-            return None
-    else:
-        # in such cases we expect to don't use the type
-        return None
-
-def extract_deep_ty(e:exp) -> Union[ty, None]:
-    match e:
-        case IntConst(value=_, ty=ty_):
-            return extract_ty(ty_)
-        case BoolConst(value=_, ty=ty_):
-            return extract_ty(ty_)
-        case Name(name=_, ty=ty_):
-            return extract_ty(ty_)
-        case Call(name=_, args=args_, ty=ty_):
-            if type(ty_) == NotVoid:
-                return ty_.ty
-            else:
-                for cur_arg in args_:
-                    ty_ = extract_deep_ty(cur_arg)
-                    if ty_:
-                        return ty_
-                    else:
-                        continue
-                return None
-        case UnOp(op=_, arg=arg_, ty=_):
-            return extract_deep_ty(arg_)
-        case BinOp(left=left_, op=_, right=right_, ty=ty_):
-            if type(ty_) == NotVoid:
-                return ty_.ty
-
-            ty_ = extract_deep_ty(left_)
-            if ty_:
-                return ty_
-            else:
-                return extract_deep_ty(right_)
-
-
-
+def resolve_fun(f: str, argtys: list[ty]) -> str:
+    match (f, argtys):
+        case ('input_int', ()): return '$input_i64'
+        case ('print', [Int()]): return '$print_i64'
+        case ('print', [Bool()]): return '$print_bool'
+        case _:
+            raise ValueError(f'Bug: invalid combination of function {f} and argument types {argtys}')
 
 # ---------------
 # >>> Compile <<<
@@ -101,7 +52,7 @@ def compileModule(m: mod, cfg: CompilerConfig) -> WasmModule:
     idMain = WasmId('$main')
     locals: list[Any] = []
     for key, value in vars.items():
-        locals += [[ident_to_wasm_id(key), compileDataType(value.ty)]]
+        locals += [[ident_to_wasm_id(key), ty_to_string(value.ty)]]
     
     return WasmModule(
                 imports=wasmImports(cfg.maxMemSize),
@@ -161,15 +112,8 @@ def compileExp(e: exp) -> list[WasmInstr]:
         case Call(name=name, args=args, ty=ty_):
             for arg in args:
                 instrs += compileExp(arg)
-            
-            data_type = extract_deep_ty(Call(name=name, args=args, ty=ty_)) # extract_ty(ty_)
-
-            if not data_type:
-                raise TypeError(f"Could not find a datatype (searched recursivly).\n    Call -> '{name}'\n         -> args: {args}\n         -> ty: {ty_}")
-
-            if "$"+name.name not in FUNC_MAPPER.keys():
-                raise ValueError(f"The name '${name.name}' does not exist in FUNC_MAPPER!")
-            instrs += [WasmInstrCall(id=WasmId(FUNC_MAPPER["$"+name.name](ty_to_string(data_type))))]
+            fun = resolve_fun(name.name, [get_ty(a) for a in args])
+            instrs += [WasmInstrCall(id=WasmId(fun))]
         case UnOp(op=op, arg=arg):
             match op: 
                 case USub():
@@ -185,7 +129,7 @@ def compileExp(e: exp) -> list[WasmInstr]:
                     instrs += [WasmInstrNumBinOp(ty='i32', op='xor')]
         case BinOp(left=left, op=op, right=right, ty=ty_):
             # get type
-            ty_ = extract_deep_ty(left)
+            ty_ = get_ty(left)
 
             processed_left:list[WasmInstr] = compileExp(left)
             processed_right:list[WasmInstr] = compileExp(right)
