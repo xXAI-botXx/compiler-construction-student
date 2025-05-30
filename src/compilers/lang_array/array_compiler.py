@@ -70,15 +70,23 @@ def compileInitArray(lenExp: atomExp, elemTy: ty, cfg: CompilerConfig) -> list[W
     """
     instrs: list[WasmInstr] = []
     # Validate Length
-    if type(lenExp) != IntConst:
-        raise ValueError(f"Expected len to be a int, but got {type(lenExp)} for len.")
+    if type(lenExp) == IntConst:
+        len_instr = WasmInstrConst(ty='i64', val=lenExp.value)
+    elif type(lenExp) == Name:
+        # Name
+        len_instr = WasmInstrVarLocal(op="get", id=WasmId(id="$"+lenExp.var.name))
+        # raise ValueError(f"Expected len to be a int, but got {type(lenExp)} for len.")
+    elif type(lenExp) == BoolConst:
+        len_instr = WasmInstrConst(ty='i64', val=int(lenExp.value))
+    else:
+        raise Exception(f"Type of length is {type(lenExp)}")
 
     # len < 0 && len > 0
-    left: list[WasmInstr] = [WasmInstrConst(ty='i64', val=lenExp.value),
+    left: list[WasmInstr] = [len_instr,
                WasmInstrConst(ty='i64', val=0),
                WasmInstrIntRelOp(ty='i64', op='lt_s'),
                ]
-    right: list[WasmInstr] = [WasmInstrConst(ty='i64', val=lenExp.value),
+    right: list[WasmInstr] = [len_instr,
                WasmInstrConst(ty='i64', val=cfg.maxArraySize),
                WasmInstrIntRelOp(ty='i64', op='gt_s')]
 
@@ -93,8 +101,9 @@ def compileInitArray(lenExp: atomExp, elemTy: ty, cfg: CompilerConfig) -> list[W
     instrs += [WasmInstrIf(resultType=None, thenInstrs=thenBody, elseInstrs=[])]
     
     # Compute Header Value
+    instrs += [WasmInstrVarGlobal(op='get', id=Globals.freePtr)]
     instrs += [WasmInstrVarGlobal(op='get', id=Globals.freePtr)]  # save old value $@free_ptr (address of the array)
-    instrs += [WasmInstrConst(ty='i64', val=lenExp.value)]  # length is on top of stack
+    instrs += [len_instr]  # length is on top of stack
     instrs += [WasmInstrConvOp(op='i32.wrap_i64')]  # converts length to i32
     instrs += [WasmInstrNumBinOp(ty='i32', op='shl')]  # shift length left by 4 bit
     if type(elemTy) == Array:
@@ -108,7 +117,7 @@ def compileInitArray(lenExp: atomExp, elemTy: ty, cfg: CompilerConfig) -> list[W
 
     # Move $@free_ptr and return array address.
     instrs += [WasmInstrVarGlobal(op='get', id=Globals.freePtr)]
-    instrs += [WasmInstrConst(ty='i64', val=lenExp.value)]
+    instrs += [len_instr]
     instrs += [WasmInstrConvOp(op='i32.wrap_i64')]
     if type(elemTy) in [Array, Bool]:
         s = 4
@@ -184,8 +193,6 @@ def compileModule(m: plainAst.mod, cfg: CompilerConfig) -> WasmModule:
     stmts_a:list[stmt] = array_transform.transStmts(stmts, env_ctx)
 
     # compiling statements
-    Globals.decls()
-    Locals.decls()
     instrs = compileStmts(stmts_a, cfg)
     
     # generating Wasm module
@@ -193,12 +200,15 @@ def compileModule(m: plainAst.mod, cfg: CompilerConfig) -> WasmModule:
     locals: list[Any] = []
     for key, value in vars.items():
         locals += [[ident_to_wasm_id(key), ty_to_string(value.ty)]]
+    for id_, type_ in Locals.decls(): 
+        locals += [[id_, type_]]
+    
     
     return WasmModule(
                 imports=wasmImports(cfg.maxMemSize),
                 exports=[WasmExport("main", WasmExportFunc(idMain))],
-                globals=[],
-                data=[],
+                globals=Globals.decls(),
+                data=Errors.data(),
                 funcTable=WasmFuncTable([]),
                 funcs=[WasmFunc(idMain, [], None, locals, instrs)]
             )
@@ -343,35 +353,38 @@ def compileExp(e: exp, cfg: CompilerConfig) -> list[WasmInstr]:
             else:
                 raise Exception(f"Did not handle operator: {op} with type {ty_}")
         case ArrayInitDyn(len=len_, elemInit=elemInit, ty=ty_):
-            instrs += [WasmInstrConst(ty="i32", val=0)]
-            instrs += [WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i32'))]
+            # instrs += [WasmInstrConst(ty="i32", val=0)]
+            # instrs += [WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i32'))]
+
+            str_ty = ty_to_string(get_ty(ty_))
 
             instrs += [WasmInstrConst(ty="i32", val=100)]
             instrs += compileInitArray(lenExp=len_, elemTy=get_ty(ty_), cfg=cfg)
-            instrs += [WasmInstrVarLocal(op="tee", id=WasmId("$@tmp_i32"))]
-            instrs += [WasmInstrVarLocal(op="get", id=WasmId("$@tmp_i32"))]
-            instrs += [WasmInstrConst(ty="i32", val=4)]
-            instrs += [WasmInstrNumBinOp(ty="i32", op="add")]
-            instrs += [WasmInstrVarLocal(op="set", id=WasmId("$@tmp_i32"))]
+            instrs += [WasmInstrVarLocal(op="tee", id=WasmId(f"$@tmp_{str_ty}"))]
+            instrs += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
+            instrs += [WasmInstrConst(ty=str_ty, val=4)]
+            instrs += [WasmInstrNumBinOp(ty=str_ty, op="add")]
+            instrs += [WasmInstrVarLocal(op="set", id=WasmId(f"$@tmp_{str_ty}"))]
             
-            condition: list[WasmInstr] = [WasmInstrVarLocal(op="get", id=WasmId("$@tmp_i32"))]
+            condition: list[WasmInstr] = [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
             condition += [WasmInstrVarGlobal(op="get", id=WasmId("$@free_ptr"))]
-            condition += [WasmInstrIntRelOp(ty="i32", op="lt_u")]
+            condition += [WasmInstrIntRelOp(ty=str_ty, op="lt_u")]
 
-            body: list[WasmInstr] = [WasmInstrVarLocal(op="set", id=WasmId("$@tmp_i32"))]
+            body: list[WasmInstr] = [WasmInstrVarLocal(op="set", id=WasmId(f"$@tmp_{str_ty}"))]
             body += compileAtomExp(elemInit, cfg)
             ty_ = elemInit.ty
             if ty_ != None:
                 body += [WasmInstrMem(ty=ty_to_string(ty_), op="store")]
             else:
                 raise ValueError("Expected a type but got None!")
-            body += [WasmInstrVarGlobal(op="get", id=WasmId("$@tmp_i32"))]
-            if ty_to_string(ty_) == "i32":
-                body += [WasmInstrConst(ty="i32", val=4)]
+            # str_ty = ty_to_string(ty_)
+            body += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
+            if str_ty == "i32":
+                body += [WasmInstrConst(ty=str_ty, val=4)]
             else:
-                body += [WasmInstrConst(ty="i32", val=8)]
-            body += [WasmInstrNumBinOp(ty="i32", op="add")]
-            body += [WasmInstrVarLocal(op="set", id=WasmId("$@tmp_i32"))]
+                body += [WasmInstrConst(ty=str_ty, val=8)]
+            body += [WasmInstrNumBinOp(ty=str_ty, op="add")]
+            body += [WasmInstrVarLocal(op="set", id=WasmId(f"$@tmp_{str_ty}"))]
 
             # Create While loop
             entry_jump_label = WasmId('$loop_start')
@@ -389,45 +402,44 @@ def compileExp(e: exp, cfg: CompilerConfig) -> list[WasmInstr]:
 
             instrs += [WasmInstrBlock(label=exit_jump_label, result=None, body=block_body)]
         case ArrayInitStatic(elemInit=elemInit, ty=ty_):
-            instrs += [WasmInstrConst(ty="i32", val=0)]
-            instrs += [WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i32'))]
+            # instrs += [WasmInstrConst(ty="i32", val=0)]
+            # instrs += [WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i32'))]
 
             len_ = len(elemInit)
+            str_ty = ty_to_string(get_ty(ty_))
             instrs += compileInitArray(lenExp=IntConst(len_), elemTy=get_ty(ty_), cfg=cfg)
-            instrs += [WasmInstrVarLocal(op="tee", id=WasmId("$@tmp_i32"))]
-            instrs += [WasmInstrVarLocal(op="get", id=WasmId("$@tmp_i32"))]
-            instrs += [WasmInstrConst(ty="i32", val=4)]
-            instrs += [WasmInstrNumBinOp(ty="i32", op="add")]
+            instrs += [WasmInstrVarLocal(op="tee", id=WasmId(f"$@tmp_{str_ty}"))]
+            instrs += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
+            instrs += [WasmInstrConst(ty=str_ty, val=4)]
+            instrs += [WasmInstrNumBinOp(ty=str_ty, op="add")]
 
             for idx, cur_elemInit in enumerate(elemInit):
                 ty_ = cur_elemInit.ty
                 if ty_ is None:
                     raise ValueError("Expected a type but got None!")
 
-                str_ty = ty_to_string(ty_)
-
-                value = 0    # cur_elemInit.value
+                    # cur_elemInit.value
                 match cur_elemInit:
                     case IntConst(value=value_, ty=_):
-                        value = value_
+                        value_instr = WasmInstrConst(ty=str_ty, val=value_)
                     case BoolConst(value=value_, ty=_):
-                        value = value_
-                    case Name(var=_, ty=_):
-                        value = 0 # WasmInstrVarGlobal(op="get", id=WasmId(id="$"+var.name))
-                        raise ValueError("Unhandled Class -> Name.")
+                        value_instr = WasmInstrConst(ty=str_ty, val=value_)
+                    case Name(var=var, ty=_):
+                        value_instr = WasmInstrVarLocal(op="get", id=WasmId(id="$"+var.name))
+                        # raise ValueError("Unhandled Class -> Name.")
 
                 if idx == 0:
                     # add elements
-                    instrs += [WasmInstrConst(ty=str_ty, val=value)]
+                    instrs += [value_instr]
                     instrs += [WasmInstrMem(ty=str_ty, op='store')]
                 else:
-                    instrs += [WasmInstrVarLocal(op="tee", id=WasmId("$@tmp_i32"))]
-                    instrs += [WasmInstrVarLocal(op="get", id=WasmId("$@tmp_i32"))]
+                    instrs += [WasmInstrVarLocal(op="tee", id=WasmId(f"$@tmp_{str_ty}"))]
+                    instrs += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
 
                     # add offset
-                    instrs += [WasmInstrConst(ty="i32", val=12)]
-                    instrs += [WasmInstrNumBinOp(ty="i32", op="add")]
-                    instrs += [WasmInstrConst(ty=str_ty, val=value)]
+                    instrs += [WasmInstrConst(ty=str_ty, val=12)]
+                    instrs += [WasmInstrNumBinOp(ty=str_ty, op="add")]
+                    instrs += [value_instr]
                     instrs += [WasmInstrMem(ty=str_ty, op='store')]
         case Subscript(array=array_, index=index_, ty=ty_):
             instrs += arrayOffsetInstrs(arrayExp=array_, indexExp=index_, ty_=get_ty(ty_), cfg=cfg)
