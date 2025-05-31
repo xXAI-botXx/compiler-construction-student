@@ -32,7 +32,7 @@ def get_ty(ty_:optional[resultTy]) -> ty:
     else:
         raise ValueError("Expected exp to have an return type.")
 
-def ty_to_string(ty_:ty) -> Union[Literal['i32'], Literal['i64']]:
+def ty_to_string(ty_:optional[ty]) -> Union[Literal['i32'], Literal['i64']]:
     match ty_:
         case Int():
             return 'i64'
@@ -40,12 +40,16 @@ def ty_to_string(ty_:ty) -> Union[Literal['i32'], Literal['i64']]:
             return 'i32'
         case Array():
             return 'i32'    # FIXME
+        case None:
+            return 'i32'
 
 def resolve_fun(f: str, argtys: list[ty]) -> str:
     match (f, argtys):
         case ('input_int', ()): return '$input_i64'
         case ('print', [Int()]): return '$print_i64'
         case ('print', [Bool()]): return '$print_bool'
+        # case ('print', [Array(Int())]): return '$print_i64'
+        # case ('print', [Array(Bool())]): return '$print_i64'
         # case ('len', [Array()]): return '$len'
         case _:
             raise ValueError(f'Bug: invalid combination of function {f} and argument types {argtys}')
@@ -81,19 +85,23 @@ def compileInitArray(lenExp: atomExp, elemTy: ty, cfg: CompilerConfig) -> list[W
     else:
         raise Exception(f"Type of length is {type(lenExp)}")
 
-    # len < 0 && len > 0
+    # len < 0 or len > 0
     left: list[WasmInstr] = [len_instr,
+               WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i64')),
+               WasmInstrVarLocal(op="get", id=WasmId('$@tmp_i64')), 
                WasmInstrConst(ty='i64', val=0),
                WasmInstrIntRelOp(ty='i64', op='lt_s'),
                ]
     right: list[WasmInstr] = [len_instr,
-               WasmInstrConst(ty='i64', val=cfg.maxArraySize),
+               WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i64')),
+               WasmInstrVarLocal(op="get", id=WasmId('$@tmp_i64')),
+               WasmInstrConst(ty='i64', val=cfg.maxArraySize//8),
                WasmInstrIntRelOp(ty='i64', op='gt_s')]
 
     instrs += [*left,
                WasmInstrIf(resultType="i32", 
-                          thenInstrs=right,
-                          elseInstrs=[WasmInstrConst(ty='i32', val=0)]
+                          thenInstrs=[WasmInstrConst(ty='i32', val=1)],
+                          elseInstrs=right
                          )]
     
     thenBody: list[WasmInstr] = Errors.outputError(Errors.arraySize)  # + unreachable?
@@ -101,10 +109,10 @@ def compileInitArray(lenExp: atomExp, elemTy: ty, cfg: CompilerConfig) -> list[W
     instrs += [WasmInstrIf(resultType=None, thenInstrs=thenBody, elseInstrs=[])]
     
     # Compute Header Value
-    instrs += [WasmInstrVarGlobal(op='get', id=Globals.freePtr)]
     instrs += [WasmInstrVarGlobal(op='get', id=Globals.freePtr)]  # save old value $@free_ptr (address of the array)
-    instrs += [len_instr]  # length is on top of stack
+    instrs += [WasmInstrVarLocal(op='get', id=WasmId('$@tmp_i64'))] # length is on top of stack
     instrs += [WasmInstrConvOp(op='i32.wrap_i64')]  # converts length to i32
+    instrs += [WasmInstrConst(ty='i32', val=4)]
     instrs += [WasmInstrNumBinOp(ty='i32', op='shl')]  # shift length left by 4 bit
     if type(elemTy) == Array:
         m = 3
@@ -117,7 +125,7 @@ def compileInitArray(lenExp: atomExp, elemTy: ty, cfg: CompilerConfig) -> list[W
 
     # Move $@free_ptr and return array address.
     instrs += [WasmInstrVarGlobal(op='get', id=Globals.freePtr)]
-    instrs += [len_instr]
+    instrs += [WasmInstrVarLocal(op='get', id=WasmId('$@tmp_i64'))]
     instrs += [WasmInstrConvOp(op='i32.wrap_i64')]
     if type(elemTy) in [Array, Bool]:
         s = 4
@@ -145,33 +153,62 @@ def arrayLenInstrs() -> list[WasmInstr]:
 
     return instrs
 
-def arrayOffsetInstrs(arrayExp: atomExp, indexExp: atomExp, ty_:ty, cfg: CompilerConfig) -> list[WasmInstr]:
+def arrayOffsetInstrs(arrayExp: atomExp, indexExp: atomExp, cfg: CompilerConfig) -> list[WasmInstr]:
     """
     Returns instructions that places the memory offset for a certain array element on top of stack.
     """
     instrs: list[WasmInstr] = []
 
-    instrs += compileAtomExp(arrayExp, cfg)
-
-    # Add 4 to skip header
-    instrs += [WasmInstrConst(ty='i32', val=4)]
-    instrs += [WasmInstrNumBinOp(ty='i32', op='add')]
-
-    instrs += compileAtomExp(indexExp, cfg)
-
-    # Get ELemt Size -> from where?
-    if type(ty_) in [Array, Bool]:
-        elem_size = 4
+    # Get Index Value
+    if type(indexExp) == IntConst:
+        index_instr = WasmInstrConst(ty='i64', val=indexExp.value)
+    elif type(indexExp) == Name:
+        # Name
+        index_instr = WasmInstrVarLocal(op="get", id=WasmId(id="$"+indexExp.var.name))
+        # raise ValueError(f"Expected len to be a int, but got {type(lenExp)} for len.")
+    elif type(indexExp) == BoolConst:
+        index_instr = WasmInstrConst(ty='i64', val=int(indexExp.value))
     else:
-        elem_size = 8
-    # elem_size = 8
+        raise Exception(f"Type of index is {type(indexExp)}")
 
-    # Multiply index by element size
-    instrs += [WasmInstrConst(ty='i32', val=elem_size)]
-    instrs += [WasmInstrNumBinOp(ty='i32', op='mul')]
+    # check smaller than 0
+    thenBody: list[WasmInstr] = Errors.outputError(Errors.arrayIndexOutOfBounds)  # + unreachable?
+    thenBody += [WasmInstrTrap()]
 
-    # Add offset to base+4
-    instrs += [WasmInstrNumBinOp(ty='i32', op='add')]
+    if_instrs: list[WasmInstr] = [index_instr,
+                                  WasmInstrConst(ty='i64', val=0),
+                                  WasmInstrIntRelOp(ty='i64', op='lt_s')
+                                 ]
+    instrs += [*if_instrs,
+               WasmInstrIf(resultType=None, 
+                          thenInstrs=thenBody,
+                          elseInstrs=[]
+                         )]
+
+    if type(arrayExp) == Name:
+        # check if bigger than array
+        # set array on stack 
+        instrs += [WasmInstrVarLocal(op='get', id=WasmId(f'${arrayExp.var.name}'))]
+        # get length of array
+        instrs += arrayLenInstrs() 
+
+        thenBody: list[WasmInstr] = Errors.outputError(Errors.arrayIndexOutOfBounds)  # + unreachable?
+        thenBody += [WasmInstrTrap()]
+
+        if_instrs: list[WasmInstr] = [index_instr,
+                                      WasmInstrConst(ty='i64', val=1),
+                                      WasmInstrNumBinOp(ty='i64', op='add'),
+                                      WasmInstrIntRelOp(ty='i64', op='lt_s')
+                                     ]
+        instrs += [*if_instrs,
+                WasmInstrIf(resultType=None, 
+                            thenInstrs=thenBody,
+                            elseInstrs=[]
+                            )]
+        instrs += [WasmInstrVarLocal(op='get', id=WasmId(f'${arrayExp.var.name}'))]
+        instrs += [index_instr]
+    else:
+        raise ValueError(f"ArrayExp should have Name type but is {type(arrayExp)}")
 
     return instrs
 
@@ -191,18 +228,20 @@ def compileModule(m: plainAst.mod, cfg: CompilerConfig) -> WasmModule:
     stmts:list[plainAst.stmt] = m.stmts
     env_ctx:array_transform.Ctx = array_transform.Ctx()
     stmts_a:list[stmt] = array_transform.transStmts(stmts, env_ctx)
-
-    # compiling statements
-    instrs = compileStmts(stmts_a, cfg)
     
     # generating Wasm module
+    new_vars = env_ctx.freshVars
     idMain = WasmId('$main')
     locals: list[Any] = []
     for key, value in vars.items():
         locals += [[ident_to_wasm_id(key), ty_to_string(value.ty)]]
+    for key, value in new_vars.items():
+        locals += [[ident_to_wasm_id(key), ty_to_string(value)]]
     for id_, type_ in Locals.decls(): 
         locals += [[id_, type_]]
-    
+
+    # compiling statements
+    instrs = compileStmts(stmts_a, cfg)
     
     return WasmModule(
                 imports=wasmImports(cfg.maxMemSize),
@@ -217,6 +256,7 @@ def compileStmts(stmts:list[stmt], cfg: CompilerConfig) -> list[WasmInstr]:
     instrs:list[Union[WasmInstrL, WasmInstr, WasmInstrLoop]] = []
 
     for cur_stmt in stmts:
+        # print(f"\ncur_stmt: {cur_stmt}")
         match cur_stmt:
             case StmtExp(exp=e):
                 instrs += compileExp(e, cfg)
@@ -244,10 +284,26 @@ def compileStmts(stmts:list[stmt], cfg: CompilerConfig) -> list[WasmInstr]:
 
                 instrs += [WasmInstrBlock(label=exit_jump_label, result=None, body=block_body)]
             case SubscriptAssign(left=left, index=index, right=right):
+                # process array indexing
+                instrs += arrayOffsetInstrs(arrayExp=left, indexExp=index, cfg=cfg)
+                
+                if type(left.ty) == Array:
+                    array_type = left.ty.elemTy
+                    instrs += [WasmInstrConvOp(op='i32.wrap_i64')]
+                    if type(array_type) in [Array, Bool]:
+                        s = 4
+                    else:
+                        s = 8
+                    instrs += [WasmInstrConst(ty='i32', val=s)]
+                    instrs += [WasmInstrNumBinOp(ty='i32', op='mul')]  # multiply length with the size of each element
+                    instrs += [WasmInstrConst(ty='i32', val=4)]
+                    instrs += [WasmInstrNumBinOp(ty='i32', op='add')]  # add 4 for the header
+                    instrs += [WasmInstrNumBinOp(ty='i32', op='add')]
+
+                # process right exp
                 instrs += compileExp(right, cfg)
-                ty_ = get_ty(right.ty)
-                instrs += arrayOffsetInstrs(arrayExp=left, indexExp=index, ty_=ty_, cfg=cfg)
-                if type(ty_) in [Array, Bool]:
+                right_ty = get_ty(right.ty)
+                if type(right_ty) in [Array, Bool]:
                     instrs += [WasmInstrMem(ty='i32', op='store')]
                 else:
                     instrs += [WasmInstrMem(ty='i64', op='store')]
@@ -265,7 +321,17 @@ def compileExp(e: exp, cfg: CompilerConfig) -> list[WasmInstr]:
             
             if var_.name == "len":
                 instrs += arrayLenInstrs()
+            # elif var_.name == "print":
+            #     if type(args[0].ty) == NotVoid:
+            #         if type(args[0].ty.ty) in [Array, BoolConst]:
+            #             fun = f'$print_bool'
+            #         else:
+            #             fun = f'$print_i64'
+            #         instrs += [WasmInstrCall(id=WasmId(fun))]
+            #     else:
+            #         raise TypeError("Cannot handle print with Void type")
             else:
+                # instrs += [WasmInstrCall(id=WasmId('$input_i64'))]
                 fun = resolve_fun(var_.name, [get_ty(a.ty) for a in args])
                 instrs += [WasmInstrCall(id=WasmId(fun))]
         case UnOp(op=op, arg=arg):
@@ -350,41 +416,55 @@ def compileExp(e: exp, cfg: CompilerConfig) -> list[WasmInstr]:
                                     ]
                     case _: 
                         raise Exception(f"Do not handle operator: {op}")
+            elif type(ty_) == Array:
+                instrs += processed_left
+                instrs += processed_right
+                instrs += [WasmInstrIntRelOp(ty='i32', op='eq')]
             else:
                 raise Exception(f"Did not handle operator: {op} with type {ty_}")
         case ArrayInitDyn(len=len_, elemInit=elemInit, ty=ty_):
-            # instrs += [WasmInstrConst(ty="i32", val=0)]
-            # instrs += [WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i32'))]
+            ty_ = get_ty(ty_)
+            if type(ty_) != Array:
+                raise TypeError(f"ArrayInitDyn need type Array but got '{type(ty_)}'")
 
-            str_ty = ty_to_string(get_ty(ty_))
+            elem_ty = ty_.elemTy
 
-            instrs += [WasmInstrConst(ty="i32", val=100)]
-            instrs += compileInitArray(lenExp=len_, elemTy=get_ty(ty_), cfg=cfg)
-            instrs += [WasmInstrVarLocal(op="tee", id=WasmId(f"$@tmp_{str_ty}"))]
-            instrs += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
-            instrs += [WasmInstrConst(ty=str_ty, val=4)]
-            instrs += [WasmInstrNumBinOp(ty=str_ty, op="add")]
-            instrs += [WasmInstrVarLocal(op="set", id=WasmId(f"$@tmp_{str_ty}"))]
+            instrs += compileInitArray(lenExp=len_, elemTy=elem_ty, cfg=cfg)
+
+            instrs += [WasmInstrVarLocal(op='tee', id=WasmId('$@tmp_i32'))]
+            instrs += [WasmInstrVarLocal(op='get', id=WasmId('$@tmp_i32'))]
+            instrs += [WasmInstrConst(ty='i32', val=4)]
+            instrs += [WasmInstrNumBinOp(ty='i32', op='add')]
+            instrs += [WasmInstrVarLocal(op='set', id=WasmId('$@tmp_i32'))]
+
+
+            condition: list[WasmInstr] = [WasmInstrVarLocal(op="get", id=WasmId('$@tmp_i32'))]
+            condition += [WasmInstrVarGlobal(op="get", id=WasmId('$@free_ptr'))]
+            condition += [WasmInstrIntRelOp(ty='i32', op="lt_u")]
+
+            body: list[WasmInstr] = [WasmInstrVarLocal(op="get", id=WasmId(f'$@tmp_i32'))]
+            match elemInit:
+                    case IntConst(value=value_, ty=_):
+                        value_instr = WasmInstrConst(ty='i64', val=value_)
+                    case BoolConst(value=value_, ty=_):
+                        value_instr = WasmInstrConst(ty='i32', val=int(value_))
+                    case Name(var=var, ty=_):
+                        value_instr = WasmInstrVarLocal(op="get", id=WasmId(id="$"+var.name))
+            body += [value_instr]
             
-            condition: list[WasmInstr] = [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
-            condition += [WasmInstrVarGlobal(op="get", id=WasmId("$@free_ptr"))]
-            condition += [WasmInstrIntRelOp(ty=str_ty, op="lt_u")]
-
-            body: list[WasmInstr] = [WasmInstrVarLocal(op="set", id=WasmId(f"$@tmp_{str_ty}"))]
-            body += compileAtomExp(elemInit, cfg)
             ty_ = elemInit.ty
             if ty_ != None:
                 body += [WasmInstrMem(ty=ty_to_string(ty_), op="store")]
             else:
                 raise ValueError("Expected a type but got None!")
             # str_ty = ty_to_string(ty_)
-            body += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
-            if str_ty == "i32":
-                body += [WasmInstrConst(ty=str_ty, val=4)]
+            body += [WasmInstrVarLocal(op='get', id=WasmId('$@tmp_i32'))]
+            if ty_to_string(ty_) == 'i32':  # Array or BoolConst
+                body += [WasmInstrConst(ty='i32', val=4)]
             else:
-                body += [WasmInstrConst(ty=str_ty, val=8)]
-            body += [WasmInstrNumBinOp(ty=str_ty, op="add")]
-            body += [WasmInstrVarLocal(op="set", id=WasmId(f"$@tmp_{str_ty}"))]
+                body += [WasmInstrConst(ty='i32', val=8)]
+            body += [WasmInstrNumBinOp(ty='i32', op='add')]
+            body += [WasmInstrVarLocal(op='set', id=WasmId(f'$@tmp_i32'))]
 
             # Create While loop
             entry_jump_label = WasmId('$loop_start')
@@ -402,51 +482,70 @@ def compileExp(e: exp, cfg: CompilerConfig) -> list[WasmInstr]:
 
             instrs += [WasmInstrBlock(label=exit_jump_label, result=None, body=block_body)]
         case ArrayInitStatic(elemInit=elemInit, ty=ty_):
-            # instrs += [WasmInstrConst(ty="i32", val=0)]
-            # instrs += [WasmInstrVarLocal(op="set", id=WasmId('$@tmp_i32'))]
+            # print(f"\nArray Init Static: {ArrayInitStatic(elemInit=elemInit, ty=ty_)}")
+            ty_ = get_ty(ty_)
+            if type(ty_) != Array:
+                raise TypeError(f"ArrayInitStatic need type Array but got '{type(ty_)}'")
 
             len_ = len(elemInit)
-            str_ty = ty_to_string(get_ty(ty_))
-            instrs += compileInitArray(lenExp=IntConst(len_), elemTy=get_ty(ty_), cfg=cfg)
-            instrs += [WasmInstrVarLocal(op="tee", id=WasmId(f"$@tmp_{str_ty}"))]
-            instrs += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
-            instrs += [WasmInstrConst(ty=str_ty, val=4)]
-            instrs += [WasmInstrNumBinOp(ty=str_ty, op="add")]
+            elem_ty = ty_.elemTy
+
+            instrs += compileInitArray(lenExp=IntConst(len_), elemTy=elem_ty, cfg=cfg)
 
             for idx, cur_elemInit in enumerate(elemInit):
-                ty_ = cur_elemInit.ty
-                if ty_ is None:
-                    raise ValueError("Expected a type but got None!")
+            
+                instrs += [WasmInstrVarLocal(op='tee', id=WasmId('$@tmp_i32'))]
+                instrs += [WasmInstrVarLocal(op='get', id=WasmId('$@tmp_i32'))]
+                if idx == 0:
+                    offset = 4
+                else:
+                    # if type(cur_elemInit) in [Array, BoolConst]:
+                    if type(elem_ty) in [Array, Bool]:
+                        offset = (idx*4) + 4
+                    else:
+                        offset = (idx*8) + 4
+                instrs += [WasmInstrConst(ty='i32', val=offset)]
+                instrs += [WasmInstrNumBinOp(ty='i32', op='add')]
 
-                    # cur_elemInit.value
                 match cur_elemInit:
                     case IntConst(value=value_, ty=_):
-                        value_instr = WasmInstrConst(ty=str_ty, val=value_)
+                        value_instr = WasmInstrConst(ty='i64', val=value_)
                     case BoolConst(value=value_, ty=_):
-                        value_instr = WasmInstrConst(ty=str_ty, val=value_)
+                        value_instr = WasmInstrConst(ty='i32', val=int(value_))
                     case Name(var=var, ty=_):
                         value_instr = WasmInstrVarLocal(op="get", id=WasmId(id="$"+var.name))
                         # raise ValueError("Unhandled Class -> Name.")
 
-                if idx == 0:
-                    # add elements
-                    instrs += [value_instr]
-                    instrs += [WasmInstrMem(ty=str_ty, op='store')]
-                else:
-                    instrs += [WasmInstrVarLocal(op="tee", id=WasmId(f"$@tmp_{str_ty}"))]
-                    instrs += [WasmInstrVarLocal(op="get", id=WasmId(f"$@tmp_{str_ty}"))]
+                instrs += [value_instr]
 
-                    # add offset
-                    instrs += [WasmInstrConst(ty=str_ty, val=12)]
-                    instrs += [WasmInstrNumBinOp(ty=str_ty, op="add")]
-                    instrs += [value_instr]
-                    instrs += [WasmInstrMem(ty=str_ty, op='store')]
+                instrs += [WasmInstrMem(ty=ty_to_string(cur_elemInit.ty), op='store')]
         case Subscript(array=array_, index=index_, ty=ty_):
-            instrs += arrayOffsetInstrs(arrayExp=array_, indexExp=index_, ty_=get_ty(ty_), cfg=cfg)
-            if type(get_ty(ty_)) in [Array, Bool]:
-                instrs += [WasmInstrMem(ty='i32', op='load')]
+            instrs += arrayOffsetInstrs(arrayExp=array_, indexExp=index_, cfg=cfg)
+            
+            if type(array_.ty) == Array:
+                array_type = array_.ty.elemTy
+                instrs += [WasmInstrConvOp(op='i32.wrap_i64')]
+                if type(array_type) in [Array, Bool]:
+                    s = 4
+                else:
+                    s = 8
+                instrs += [WasmInstrConst(ty='i32', val=s)]
+                instrs += [WasmInstrNumBinOp(ty='i32', op='mul')]  # multiply length with the size of each element
+                instrs += [WasmInstrConst(ty='i32', val=4)]
+                instrs += [WasmInstrNumBinOp(ty='i32', op='add')]  # add 4 for the header
+                instrs += [WasmInstrNumBinOp(ty='i32', op='add')]
             else:
-                instrs += [WasmInstrMem(ty='i64', op='load')]
+                raise TypeError(f"Got an wrong type {type(array_.ty)}")
+            
+            instrs += [WasmInstrMem(ty='i32', op='load')]
+            elem_ty = get_ty(ty_)
+            # if type(elem_ty) in [Array, Bool]:
+            #     instrs += [WasmInstrMem(ty='i32', op='load')]
+            # else:
+            #     instrs += [WasmInstrMem(ty='i64', op='load')]
+            
+            if type(array_.ty) == Array and type(array_.ty.elemTy) == Int:
+                instrs += [WasmInstrConvOp(op='i64.extend_i32_u')]
 
     return instrs
 

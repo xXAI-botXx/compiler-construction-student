@@ -5,6 +5,7 @@
 
 scripts/run_test
 scripts/run-tests -k 'test_compiler[loop'
+scripts/run-tests -k 'test_compiler[array'
 
 scripts/check
 
@@ -23,4 +24,5 @@ rm -f out.wat && scripts/run --lang var parse ./test.py
 
 rm -f out.wat && scripts/run --lang loop compile ./test.py
 
-rm -f out.wat && scripts/run --lang array compile ./test.py
+rm -f out.wat && scripts/run --lang array run ./test.py
+scripts/run --lang array run test.py
