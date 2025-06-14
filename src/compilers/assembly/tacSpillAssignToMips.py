@@ -106,8 +106,8 @@ def assignToMips(i: tacSpill.Assign) -> list[mips.instr]:
                                    imm(i.right.left.value)),
                         mips.Op(op_name[0], 
                                 reg(i.var), 
-                                reg(i.right.right.var), 
-                                reg(tacSpill.Ident("$t2"))
+                                reg(tacSpill.Ident("$t2")),
+                                reg(i.right.right.var)
                                 )]
         elif type(i.right.left) == tacSpill.Const and type(i.right.right) == tacSpill.Const:
             if type(op_name[0]) == mips.Add:

@@ -67,8 +67,7 @@ def instrUse(instr: tac.instr) -> set[tac.ident]:
             right_set.add(right_exp.p.var)
 
         # update processed right
-        # identifiers.update(right_set)
-        identifiers = identifiers.union(right_set)
+        identifiers.update(right_set)
     elif type(instr) == tac.GotoIf and type(instr.test) == tac.Name:
         identifiers.add(instr.test.var)
     
@@ -120,8 +119,7 @@ class InterfGraphBuilder:
             used: set[tac.Ident] = instrUse(cur_instr)
             updated_before_set: set[tac.Ident] = dc(self.after[(bb.index, cur_idx)])
             updated_before_set.difference_update(defined)
-            # updated_before_set.update(used)
-            updated_before_set = updated_before_set.union(used)
+            updated_before_set.update(used)
             self.before[(bb.index, cur_idx)] = updated_before_set
 
             # next block
@@ -153,8 +151,7 @@ class InterfGraphBuilder:
 
                 for cur_successor in g.succs(cur_block):
                     if g.getData(cur_successor).instrs:
-                        # cur_block_set.update(input_[cur_successor])
-                        cur_block_set = cur_block_set.union(input_[cur_successor])
+                        cur_block_set.update(input_[cur_successor])
 
                 input_[cur_block] = self.liveStart(g.getData(cur_block), cur_block_set)
 
