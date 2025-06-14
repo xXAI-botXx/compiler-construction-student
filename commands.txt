@@ -19,6 +19,9 @@ you can use 'git gui'
 single run/compiling: scripts/run --lang loop run ./test_files/lang_loop/factorial.py
 
 
+scripts/run -k test_liveness
+scripts/run -k test_graphColoring
+
 Run test:
 rm -f out.wat && scripts/run --lang var parse ./test.py
 
