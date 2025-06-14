@@ -3,7 +3,7 @@
 3. code .
 4. docker run -v .:/cc -ti skogsbaer/compiler-construction-wasm_linux-amd64:latest bash
 
-scripts/run_test
+scripts/run-tests
 scripts/run-tests -k 'test_compiler[loop'
 scripts/run-tests -k 'test_compiler[array'
 
@@ -19,8 +19,8 @@ you can use 'git gui'
 single run/compiling: scripts/run --lang loop run ./test_files/lang_loop/factorial.py
 
 
-scripts/run -k test_liveness
-scripts/run -k test_graphColoring
+scripts/run-tests -k test_liveness
+scripts/run-tests -k test_graphColoring
 
 Run test:
 rm -f out.wat && scripts/run --lang var parse ./test.py
